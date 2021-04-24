@@ -113,33 +113,30 @@ int main(){
     int box_id = getpid();
     int difficulty;
     char solicitud;
-    while(strcmp(&solicitud, "bye") == 0){
-        printf("Que solicitud quiere pedir:");
-        scanf("%s", &solicitud);
-        printf("Grado de dificultad de la tarea:");
-        scanf("%d", &difficulty);
+    printf("Que solicitud quiere pedir:");
+    scanf("%s", &solicitud);
+    printf("Grado de dificultad de la tarea:");
+    scanf("%d", &difficulty);
 
-        write(pipefds[1],  &difficulty, sizeof(difficulty));
+    write(pipefds[1],  &difficulty, sizeof(difficulty));
 
-        shared_instances = mmap(NULL, PAGESIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-        *shared_instances = 1;
+    shared_instances = mmap(NULL, PAGESIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    *shared_instances = 1;
 
-        isFinished = mmap(NULL, PAGESIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-        *isFinished = 0;
+    isFinished = mmap(NULL, PAGESIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    *isFinished = 0;
 
-        int cantMeeseeks = 0;
-        int nivel = 1;
-        printf(" Hi I'm Mr Meeseeks! Look at Meeeee. (pid:%d, ppid: %d, n: %d, i: %d)\n", getpid(), getppid(), nivel, *shared_instances);
-        if(difficulty < 45){
-            cantMeeseeks = 3;
-        }else if(difficulty < 85){
-            cantMeeseeks = 1;
-        }
-        createMrMeeseeks(cantMeeseeks,1); 
-        if(getpid() != box_id){
-            break;
-        }        
+    int cantMeeseeks = 0;
+    int nivel = 1;
+    printf(" Hi I'm Mr Meeseeks! Look at Meeeee. (pid:%d, ppid: %d, n: %d, i: %d)\n", getpid(), getppid(), nivel, *shared_instances);
+    if(difficulty < 45){
+        cantMeeseeks = 3;
+    }else if(difficulty < 85){
+        cantMeeseeks = 1;
     }
+    createMrMeeseeks(cantMeeseeks,1); 
+            
+    
     if(getpid() == box_id){
         sem_destroy(&mutex);
     }
