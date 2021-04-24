@@ -9,7 +9,6 @@
 #include <semaphore.h>
 #include <fcntl.h>
 #include <time.h>
-#include <string.h>
 #include "./eval/eval.h"
 
 #define SEM_NAME "/semaphore"
@@ -25,6 +24,7 @@ int returnStatus;
 int readMessage;
 
 u_int8_t *shared_instances;
+u_int8_t *shared_levels;
 u_int8_t *isFinished;
 
 sem_t mutex;
@@ -110,11 +110,13 @@ int main(){
         printf("Unable to create pipe \n");
         return 1;
     }
-    int box_id = getpid();
+
+    original_process = getpid();
     int difficulty;
-    char solicitud;
+    char solicitud[1024];
     printf("Que solicitud quiere pedir:");
-    scanf("%s", &solicitud);
+    *solicitud = 0;
+	gets (solicitud) ;
     printf("Grado de dificultad de la tarea:");
     scanf("%d", &difficulty);
 
@@ -128,17 +130,26 @@ int main(){
 
     int cantMeeseeks = 0;
     int nivel = 1;
+    tic = clock();
     printf(" Hi I'm Mr Meeseeks! Look at Meeeee. (pid:%d, ppid: %d, n: %d, i: %d)\n", getpid(), getppid(), nivel, *shared_instances);
-    if(difficulty < 45){
-        cantMeeseeks = 3;
-    }else if(difficulty < 85){
-        cantMeeseeks = 1;
-    }
-    createMrMeeseeks(cantMeeseeks,1); 
-            
+    //int status = system("./box");
+
+    double result ;
+    printf("solicitud: %s\n", solicitud);
+    if (evaluate(solicitud, &result))
+        printf ("Result = %g\n", result) ;
+    //else
+        //evaluator_perror ( ) ;
+    //if(difficulty < 45){
+        //cantMeeseeks = 3;
+    //}else if(difficulty < 85){
+        //cantMeeseeks = 1;
+    //}
+    //createMrMeeseeks(cantMeeseeks,1);
+    //sem_destroy(&mutex);
     
-    if(getpid() == box_id){
-        sem_destroy(&mutex);
-    }
+    
     return 0;
 }
+
+// gcc box.c ./eval/eval.c -lpthread -lm -o box
