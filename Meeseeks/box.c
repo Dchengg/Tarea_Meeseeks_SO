@@ -37,15 +37,15 @@ clock_t toc;
 
 typedef enum { F, T } boolean;
 
-typedef struct node
+struct node
 {
     int meeseeks;
     double time;
     boolean state;
     struct node * next;
-} node_t;
+};
 
-node_t * head = NULL;
+struct node * head = NULL;
 
 const char* getState(boolean isBool) {
     if (isBool == F ) {
@@ -57,28 +57,37 @@ const char* getState(boolean isBool) {
 
 void printList() {
     printf("Print Function\n");
-    node_t * current = head;
+    struct node * current = head;
+    if(current==NULL) {
+        printf("Head Esta nulo\n");
+    }
 
     while (current != NULL) {
-        printf("%d\n", current->meeseeks);
-        printf("%f\n", current->time);
-        printf("%s\n", getState(current->state));
+
+        printf("Meeseeks %d\n", current->meeseeks);
+        printf("Time %f\n", current->time);
+        printf("State %s\n", getState(current->state));
         current = current->next;
     }
 }
 
 void push(int meeseeks, double time, boolean state) {
     printf("Push Function\n");
-    node_t * current = head;
-    while (current->next != NULL) {
-        current = current->next;
-    }
+    printf("Meeseek %d\n", meeseeks);
+    printf("Time %f\n", time);
+    printf("State %s\n", getState(state));
 
-    current->next = (node_t *) malloc(sizeof(node_t));
-    current->next->meeseeks = meeseeks;
-    current->next->time = time;
-    current->next->state = state;
-    current->next->next = NULL;
+    struct node *current = (struct node*) malloc(sizeof(struct node));
+    current->meeseeks = meeseeks;
+    current->time = time;
+    current->state = state;
+    current->next = head;
+
+    head = current;
+
+    if(head==NULL) {
+        printf("Head Esta nulo\n");
+    }
 }
 
 
@@ -143,8 +152,16 @@ void informFinish(){
 void resolveArithmetic(char* arithmetic){
     pid_t meeseek;
     int input_pipe[2];
+    int out_pipe[2];
 
     if (pipe (input_pipe)) {
+        toc = clock();
+        double time_spent = (double)(toc - tic) / CLOCKS_PER_SEC;
+        push(1, time_spent, F);
+        fprintf (stderr, "Pipe failed.\n");
+    }
+
+    if (pipe (out_pipe)) {
         toc = clock();
         double time_spent = (double)(toc - tic) / CLOCKS_PER_SEC;
         push(1, time_spent, F);
@@ -163,18 +180,29 @@ void resolveArithmetic(char* arithmetic){
         char concat_str[100];
         read(input_pipe[0], concat_str, 100);
         const char *expression = concat_str;
-        int result ;
-        printf("%f\n", te_interp(expression, &result));
-        toc = clock();
-        double time_spent = (double)(toc - tic) / CLOCKS_PER_SEC;
-        push(1, time_spent, T);
+        int error ;
+        float result = te_interp(expression, &error);
+        printf("%f\n", result);
 
         close(input_pipe[0]);
+        close(out_pipe[0]);
+        write(out_pipe[1], &result, sizeof(result));
+        close(out_pipe[1]);
+
     } else {
+        double result;
         close(input_pipe[0]);
         write(input_pipe[1], arithmetic, strlen(arithmetic)+1);
         close(input_pipe[1]);
         wait(NULL);
+        close(out_pipe[1]);
+        read(out_pipe[0], &result, sizeof(result));
+
+        toc = clock();
+        double time_spent = (double)(toc - tic) / CLOCKS_PER_SEC;
+        push(1, time_spent, T);
+
+        close(out_pipe[0]);
     }
     
 }
