@@ -9,7 +9,6 @@
 #include <semaphore.h>
 #include <fcntl.h>
 #include <time.h>
-#include <string.h>
 #include "./eval/eval.h"
 
 #define SEM_NAME "/semaphore"
@@ -25,6 +24,7 @@ int returnStatus;
 int readMessage;
 
 u_int8_t *shared_instances;
+u_int8_t *shared_levels;
 u_int8_t *isFinished;
 
 sem_t mutex;
@@ -179,5 +179,12 @@ int main(){
     if(getpid() == box_id){
         sem_destroy(&mutex);
     }
+    double result ;
+    printf("solicitud: %s\n", solicitud);
+    if (evaluate(solicitud, &result))
+        printf ("Result = %g\n", result) ;
+	gets (solicitud) ;
     return 0;
 }
+
+// gcc box.c ./eval/eval.c -lpthread -lm -o box
