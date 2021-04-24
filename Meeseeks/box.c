@@ -10,7 +10,7 @@
 #include <fcntl.h>
 #include <time.h>
 #include <string.h>
-#include "./eval/eval.h"
+#include "./eval/tinyexpr.h"
 
 #define SEM_PERMS (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)
 #define PAGESIZE 4096
@@ -37,6 +37,62 @@ sem_t sem_pipefds2;
 
 clock_t tic;
 clock_t toc;
+
+typedef enum { F, T } boolean;
+
+struct node // Estructura con la info del reporte
+{
+    int meeseeks;
+    double time;
+    boolean state;
+    struct node * next;
+};
+
+struct node * head = NULL;
+
+const char* getState(boolean isBool) { // Imprime el estado
+    if (isBool == F ) {
+        return "false";
+    } else {
+        return "true";
+    }
+}
+
+void printList() { // Imprime la lista simple enlazada
+    printf("Print Function\n");
+    struct node * current = head;
+    if(current==NULL) {
+        printf("Head Esta nulo\n");
+    }
+
+    while (current != NULL) {
+
+        printf("Meeseeks %d\n", current->meeseeks);
+        printf("Time %f\n", current->time);
+        printf("State %s\n", getState(current->state));
+        current = current->next;
+    }
+}
+
+void push(int meeseeks, double time, boolean state) { // Anade un nuevo valor a la lista de reportes
+    printf("Push Function\n");
+    printf("Meeseek %d\n", meeseeks);
+    printf("Time %f\n", time);
+    printf("State %s\n", getState(state));
+
+    struct node *current = (struct node*) malloc(sizeof(struct node));
+    current->meeseeks = meeseeks;
+    current->time = time;
+    current->state = state;
+    current->next = head;
+
+    head = current;
+
+    if(head==NULL) {
+        printf("Head Esta nulo\n");
+    }
+}
+
 
 void initSharedVariables(){         //inicia las variables compartidas, utilizando un mmap, para asignarles un espacio de memoria a cada una
     //setup semaforos
@@ -99,6 +155,64 @@ void informFinish(){                //Si un meeseeks termina, utiliza la variabl
     sem_post(&sem_isFinished);
 }
 
+void resolveArithmetic(char* arithmetic){ // Resuleve los problemas arimeticos
+    pid_t meeseek;
+    int input_pipe[2];
+    int out_pipe[2];
+
+    if (pipe (input_pipe)) {
+        toc = clock();
+        double time_spent = (double)(toc - tic) / CLOCKS_PER_SEC;
+        push(1, time_spent, F);
+        fprintf (stderr, "Pipe failed.\n");
+    }
+
+    if (pipe (out_pipe)) {
+        toc = clock();
+        double time_spent = (double)(toc - tic) / CLOCKS_PER_SEC;
+        push(1, time_spent, F);
+        fprintf (stderr, "Pipe failed.\n");
+    }
+
+    meeseek = fork ();
+
+    if (meeseek < 0) {
+        toc = clock();
+        double time_spent = (double)(toc - tic) / CLOCKS_PER_SEC;
+        push(1, time_spent, F);
+        fprintf(stderr, "fork Failed" );
+    } else if (meeseek == 0) {
+        close(input_pipe[1]);
+        char concat_str[100];
+        read(input_pipe[0], concat_str, 100);
+        const char *expression = concat_str;
+        int error ;
+        float result = te_interp(expression, &error);
+        printf("%f\n", result);
+
+        close(input_pipe[0]);
+        close(out_pipe[0]);
+        write(out_pipe[1], &result, sizeof(result));
+        close(out_pipe[1]);
+
+    } else {
+        double result;
+        close(input_pipe[0]);
+        write(input_pipe[1], arithmetic, strlen(arithmetic)+1);
+        close(input_pipe[1]);
+        wait(NULL);
+        close(out_pipe[1]);
+        read(out_pipe[0], &result, sizeof(result));
+
+        toc = clock();
+        double time_spent = (double)(toc - tic) / CLOCKS_PER_SEC;
+        push(1, time_spent, T);
+
+        close(out_pipe[0]);
+    }
+    
+}
+
 void informImposibleTask(){
     sem_wait(&sem_isFinished);
     if(*isFinished == 0){
@@ -117,9 +231,14 @@ void execExternalProgram(char* request){        //Ejecuta un comando que le entr
     memset(buffer, '\0', sizeof(buffer));
     if(fp != NULL){
         chars_read = fread(buffer, sizeof(char), BUFSIZ, fp);
+        toc = clock();
         if(chars_read > 0){
+            double time_spent = (double)(toc - tic) / CLOCKS_PER_SEC;
+            push(1, time_spent, T);
             printf("Output was:-\n%s\n",buffer);    //Si no falla el comando, se informa del resultada al usuario
         }
+        double time_spent = (double)(toc - tic) / CLOCKS_PER_SEC;
+        push(1, time_spent, T);
         pclose(fp);
     }
 }
@@ -211,6 +330,7 @@ int main(){
                 scanf("%[^\n]%*c", &request);
                 printf("Degree of difficulty of the task:");
                 scanf("%d", &difficulty);
+                tic = clock();
                 write(pipefds[1],  &difficulty, sizeof(difficulty));        //escribe en el primer pipe la dificultad de la tarea
                 if(difficulty < 45){
                     cantMeeseeks = 3;
@@ -219,15 +339,20 @@ int main(){
                 }
                 type = 1;
                 break;
-            case 2:  printf("Aqui va lo de eval\n");
+            case 2:  printf("What's the request:");
+                scanf("%s",&request);
+                printf ( "%s\n", &request);
+                resolveArithmetic(&request);
                 break;
             case 3:  printf("What's the request:");
                 scanf("%[^\n]%*c", &request);
+                tic = clock();
                 write(pipefds2[1],  &request, (strlen(&request))+1);       //escribe en el segundo pipe el comando que desea ejecutar el usuario
                 cantMeeseeks = 1;
                 type = 3;
                 break;
             case 4: printf("Closing Mr.Meeseeks box, bye\n");
+                printList();
                 break;
             default:
                     printf("Noooo can't do, please try to enter a valid option\n");
