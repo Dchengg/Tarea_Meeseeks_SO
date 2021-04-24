@@ -12,32 +12,35 @@
 #include <string.h>
 #include "./eval/tinyexpr.h"
 
-#define SEM_NAME "/semaphore"
 #define SEM_PERMS (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)
 #define PAGESIZE 4096
 
-int LEVEL_LIMIT = 7;
+int LEVEL_LIMIT = 3;
 
 int original_process;
 
-int pipefds[2];
-int pipefds2[2];
+int pipefds[2];     //Pipe que comunica la dificultad de la tarea entre los Meeseeks
+int pipefds2[2];    //Pipe que communica la solicitud del usuario al Meeseek
 
-int readMessage;
-char readMessage2[20];
+int readMessage;    //Variable que recibe el mensaje del primer pipe(dificultad)
+char readMessage2[20];  //Recibe el mensaje del segundo pipe(Solicitud)
 
+//Variables globales compartidas
 u_int8_t *shared_instances;
-u_int8_t *shared_levels;
 u_int8_t *isFinished;
 
-sem_t mutex;
+//semaforos
+sem_t sem_shared_instances;
+sem_t sem_isFinished;
+sem_t sem_pipefds;
+sem_t sem_pipefds2;
 
 clock_t tic;
 clock_t toc;
 
 typedef enum { F, T } boolean;
 
-struct node
+struct node // Estructura con la info del reporte
 {
     int meeseeks;
     double time;
@@ -47,7 +50,7 @@ struct node
 
 struct node * head = NULL;
 
-const char* getState(boolean isBool) {
+const char* getState(boolean isBool) { // Imprime el estado
     if (isBool == F ) {
         return "false";
     } else {
@@ -55,7 +58,7 @@ const char* getState(boolean isBool) {
     }
 }
 
-void printList() {
+void printList() { // Imprime la lista simple enlazada
     printf("Print Function\n");
     struct node * current = head;
     if(current==NULL) {
@@ -71,7 +74,7 @@ void printList() {
     }
 }
 
-void push(int meeseeks, double time, boolean state) {
+void push(int meeseeks, double time, boolean state) { // Anade un nuevo valor a la lista de reportes
     printf("Push Function\n");
     printf("Meeseek %d\n", meeseeks);
     printf("Time %f\n", time);
@@ -91,9 +94,12 @@ void push(int meeseeks, double time, boolean state) {
 }
 
 
-void initSharedVariables(){
+void initSharedVariables(){         //inicia las variables compartidas, utilizando un mmap, para asignarles un espacio de memoria a cada una
     //setup semaforos
-    sem_init(&mutex, 0, 1);
+    sem_init(&sem_shared_instances, 0, 1);
+    sem_init(&sem_isFinished, 0, 1);
+    sem_init(&sem_pipefds, 0, 1);
+    sem_init(&sem_pipefds2, 0, 1);
     //setup variable compartida de las instancias
     shared_instances = mmap(NULL, PAGESIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     *shared_instances = 1;
@@ -102,7 +108,7 @@ void initSharedVariables(){
     *isFinished = 0;
 }
 
-int initPipe(){
+int initPipe(){                     //Inicializa los dos pipes que comunicaran a los Mr.Meeseeks               
     if( pipe(pipefds) == -1){
         printf("Unable to create pipe \n");
         return 1;
@@ -114,42 +120,42 @@ int initPipe(){
     }
 }
 
-int addInstance(){
+int addInstance(){                  //Agrega una instancia a las instancias totales del programa
     int instances;
-    sem_wait(&mutex);
+    sem_wait(&sem_shared_instances);   //Espera a poder acceder a la variable compartida
     instances = *shared_instances + 1;
-    *shared_instances = instances;
-    sem_post(&mutex);
-    return instances;
+    *shared_instances = instances;  //aumenta la variable
+    sem_post(&sem_shared_instances);   //Libera la variable, para que otro proceso la pueda accedar
+    return instances;   
 }
 
-int getDifficulty(){
-    sem_wait(&mutex);
-    read(pipefds[0],  &readMessage, sizeof(readMessage));
-    int difficulty = readMessage;
+int getDifficulty(){                //Consigue la difficultad pasada por el primer pipe (pipefds)
+    sem_wait(&sem_pipefds);
+    read(pipefds[0],  &readMessage, sizeof(readMessage));   //Lee el mensaje del pipe
+    int difficulty = readMessage;      
     if(readMessage > 0){
-        difficulty = readMessage + 1;
+        difficulty = readMessage + 1;   //si la dificultad no es 0, la aumenta 1 por cada meeseeks que accede a la dificultad
     }
-    write(pipefds[1],  &readMessage, sizeof(difficulty));
-    sem_post(&mutex);
+    write(pipefds[1],  &readMessage, sizeof(difficulty));   //escribe la nueva dificultad para que sea accedida por el proximo meeseeks
+    sem_post(&sem_pipefds);
     return difficulty;
 }
 
-char* getRequest(){
-    sem_wait(&mutex);
+char* getRequest(){                 //Consigue la solicitud pasada por el segundo pipe
+    sem_wait(&sem_pipefds2);
     read(pipefds2[0],  &readMessage2, sizeof(readMessage2));
     char* request = readMessage2;
-    sem_post(&mutex);
+    sem_post(&sem_pipefds2);
     return request;
 }
 
-void informFinish(){
-    sem_wait(&mutex);
+void informFinish(){                //Si un meeseeks termina, utiliza la variable compartida como flag para informar a los otros meeseeks que la tarea ha sido finalizada
+    sem_wait(&sem_isFinished);
     *isFinished = 1;
-    sem_post(&mutex);
+    sem_post(&sem_isFinished);
 }
 
-void resolveArithmetic(char* arithmetic){
+void resolveArithmetic(char* arithmetic){ // Resuleve los problemas arimeticos
     pid_t meeseek;
     int input_pipe[2];
     int out_pipe[2];
@@ -207,10 +213,19 @@ void resolveArithmetic(char* arithmetic){
     
 }
 
-void execExternalProgram(char* request){
+void informImposibleTask(){
+    sem_wait(&sem_isFinished);
+    if(*isFinished == 0){
+        printf("Rick: Looks like we are destroying this dimension with all ..burp.. the meeseeks Morty\n");
+        *isFinished = 1;
+    }
+    sem_post(&sem_isFinished);
+}
+
+void execExternalProgram(char* request){        //Ejecuta un comando que le entre como solicitud del usuario
     FILE *fp;
     const char* command = request;
-    fp = popen(command, "r");
+    fp = popen(command, "r");   //se utiliza la función popen para ejecutar el comando, mediante un pipe
     char buffer[BUFSIZ + 1];
     int chars_read;
     memset(buffer, '\0', sizeof(buffer));
@@ -220,7 +235,7 @@ void execExternalProgram(char* request){
         if(chars_read > 0){
             double time_spent = (double)(toc - tic) / CLOCKS_PER_SEC;
             push(1, time_spent, T);
-            printf("Output was:-\n%s\n",buffer);
+            printf("Output was:-\n%s\n",buffer);    //Si no falla el comando, se informa del resultada al usuario
         }
         double time_spent = (double)(toc - tic) / CLOCKS_PER_SEC;
         push(1, time_spent, T);
@@ -228,56 +243,56 @@ void execExternalProgram(char* request){
     }
 }
 
-void createMrMeeseeks(int cantidad, int nivel, int type) {
-    sem_wait(&mutex);
-    if(*isFinished == 1){
+void createMrMeeseeks(int cantidad, int nivel, int type) {     //Función encargada de crear a los meeseeks
+    sem_wait(&sem_isFinished);
+    if(*isFinished == 1){       //Si la tarea fue finalizada por otro meeseek, todos los meeseeks se despiden y terminan
         printf("Byeeeeee\n");
         return;
     }
-    sem_post(&mutex);
+    sem_post(&sem_isFinished);
     pid_t pId;
     printf("creando %d hijos \n", cantidad);
-    for(int i = 0; i < cantidad; i++){
+    for(int i = 0; i < cantidad; i++){      //crea n procesos hijos para el proceso
         pId = fork();
         if(pId < 0){
             fprintf(stderr, "Fork fallo"); 
             break;
-        }else if(pId == 0) {
+        }else if(pId == 0) {    //sino es el proceso padre, se sale del loop para no cree hijos no deseados
             break;
         }
     }
     int instances;
     if(pId == 0) {  //Proceso hijo
-        sleep(5);
+        sleep(1);
         nivel = nivel + 1;
         instances = addInstance();
         printf("Hi I'm Mr Meeseeks! Look at Meeeee. (pid:%d, ppid: %d, n: %d, i: %d) \n", getpid(), getppid(), nivel, instances);
-        if(type == 1){
+        if(type == 1){  //Si la tarea es una solicitud textual
             int difficulty = getDifficulty();
+            printf("Dificultad: %d\n", difficulty);
             srand(time(NULL) ^ (getpid()<<16));
-            int prob  = rand() % 100 + 1;
-            if( prob * 1.5 < difficulty){
+            int prob  = rand() % 100 + 1;   //se hace un condición probabilistica, para determinar si el meeseeks logro hacer la tarea
+            if( prob * 1.5 < difficulty){   //Si logro hacer la tarea se despide
                 informFinish();
                 printf("Byeeeeee\n");
-            }else{
-                sleep(2);
+            }else{                          //si no lo logro, crea más meeseeks dependiendo de la dificultad actual de la tarea
+                sleep(2);           
                 int cantMeeseeks = 0;
                 if(difficulty < 45){
                     cantMeeseeks = 3;
                 }else if(difficulty < 85){
                     cantMeeseeks = 1;
                 }
-                if(nivel >= LEVEL_LIMIT){
-                    informFinish();
+                if(nivel >= LEVEL_LIMIT){   //si alcanza el limite de niveles, se terminan todos los meeseeks
+                    informImposibleTask();
                     printf("Byeeeeee\n");
                     return;
                 }   
                 createMrMeeseeks(cantMeeseeks, nivel, type);
             }
-        }else if(type == 3){
+        }else if(type == 3){    //si la solicitud es una ejecución de un programa externo
             char* request = getRequest();
             execExternalProgram(request);
-            printf("Byeeeeee\n");
             return;
         }
     }
@@ -316,12 +331,13 @@ int main(){
                 printf("Degree of difficulty of the task:");
                 scanf("%d", &difficulty);
                 tic = clock();
-                write(pipefds[1],  &difficulty, sizeof(difficulty));
+                write(pipefds[1],  &difficulty, sizeof(difficulty));        //escribe en el primer pipe la dificultad de la tarea
                 if(difficulty < 45){
                     cantMeeseeks = 3;
                 }else if(difficulty < 85){
                     cantMeeseeks = 1;
                 }
+                type = 1;
                 break;
             case 2:  printf("What's the request:");
                 scanf("%s",&request);
@@ -331,7 +347,7 @@ int main(){
             case 3:  printf("What's the request:");
                 scanf("%[^\n]%*c", &request);
                 tic = clock();
-                write(pipefds2[1],  &request, (strlen(&request))+1);
+                write(pipefds2[1],  &request, (strlen(&request))+1);       //escribe en el segundo pipe el comando que desea ejecutar el usuario
                 cantMeeseeks = 1;
                 type = 3;
                 break;
@@ -343,13 +359,19 @@ int main(){
                     break;
         }
         createMrMeeseeks(cantMeeseeks,1, type);
-        if(getpid() != box_id){
-            break;
+        if(getpid() != box_id){ //si no es el proceso box, procede a terminar el proceso
+            break;  
         }
     }while(choice != 4);
-    if(getpid() == box_id){
-        sem_destroy(&mutex);
+    if(getpid() == box_id){     //una vez terminado el proceso box, se cierra los pipes y el semaforo
+        sem_destroy(&sem_shared_instances);
+        sem_destroy(&sem_isFinished);
+        sem_destroy(&sem_pipefds);
+        sem_destroy(&sem_pipefds2);
+        close(pipefds[1]);
+        close(pipefds[0]);
+        close(pipefds2[1]);
+        close(pipefds2[0]);
     }
-    
     return 0;
 }
