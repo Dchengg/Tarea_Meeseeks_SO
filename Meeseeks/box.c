@@ -152,7 +152,7 @@ int main(){
         scanf("%d",&choice);
         switch(choice){
             case 1:  printf("What's the request:");
-                scanf("%s", &request);
+                scanf("%s",&request);
                 printf("Degree of difficulty of the task:");
                 scanf("%d", &difficulty);
                 write(pipefds[1],  &difficulty, sizeof(difficulty));
@@ -179,12 +179,6 @@ int main(){
     if(getpid() == box_id){
         sem_destroy(&mutex);
     }
-    double result ;
-    printf("solicitud: %s\n", solicitud);
-    if (evaluate(solicitud, &result))
-        printf ("Result = %g\n", result) ;
-	gets (solicitud) ;
+    
     return 0;
 }
-
-// gcc box.c ./eval/eval.c -lpthread -lm -o box
