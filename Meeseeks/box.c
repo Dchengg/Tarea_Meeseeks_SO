@@ -9,7 +9,7 @@
 #include <semaphore.h>
 #include <fcntl.h>
 #include <time.h>
-#include "./eval/eval.h"
+#include "./eval/tinyexpr.h"
 
 #define SEM_NAME "/semaphore"
 #define SEM_PERMS (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)
@@ -31,6 +31,49 @@ sem_t mutex;
 
 clock_t tic;
 clock_t toc;
+
+typedef enum { F, T } boolean;
+
+typedef struct node
+{
+    int meeseeks;
+    int time;
+    boolean state;
+    struct node * next;
+} node_t;
+
+void printList(node_t * head) {
+    node_t * current = head;
+
+    while (current != NULL) {
+        printf("%d\n", current->meeseeks);
+        printf("%d\n", current->time);
+        printf("%s\n", getState(current->state));
+        current = current->next;
+    }
+}
+
+const char* getState(boolean isBool) {
+    if (isBool == F ) {
+        return "false";
+    } else {
+        return "true";
+    }
+}
+
+void push(node_t * head, int meeseeks, int time, boolean state) {
+    node_t * current = head;
+    while (current->next != NULL) {
+        current = current->next;
+    }
+
+    current->next = (node_t *) malloc(sizeof(node_t));
+    current->next->meeseeks = meeseeks;
+    current->next->time = time;
+    current->next->state = state;
+    current->next->next = NULL;
+}
+
 
 void initSharedVariables(){
     //setup semaforos
@@ -163,7 +206,11 @@ int main(){
                     cantMeeseeks = 1;
                 }
                 break;
-            case 2:  printf("Aqui va lo de eval\n");
+            case 2:  printf("What's the request:");
+                scanf("%s",&request);
+                printf ( "%s\n", &request);
+                int result ;
+                printf("%f\n", te_interp(&request, &result));
                 break;
             case 3:  printf("Closing Mr.Meeseeks box, bye\n");
                 break;
