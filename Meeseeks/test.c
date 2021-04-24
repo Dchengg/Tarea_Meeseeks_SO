@@ -32,6 +32,8 @@ sem_t mutex;
 clock_t tic;
 clock_t toc;
 
+
+
 typedef enum { F, T } boolean;
 
 typedef struct node
@@ -42,7 +44,7 @@ typedef struct node
     struct node * next;
 } node_t;
 
-void print_list(node_t * head) {
+void printList(node_t * head) {
     node_t * current = head;
 
     while (current != NULL) {
@@ -61,6 +63,65 @@ const char* getState(boolean isBool) {
     }
 }
 
+void push(node_t * head, int meeseeks, int time, boolean state) {
+    node_t * current = head;
+    while (current->next != NULL) {
+        current = current->next;
+    }
+
+    current->next = (node_t *) malloc(sizeof(node_t));
+    current->next->meeseeks = meeseeks;
+    current->next->time = time;
+    current->next->state = state;
+    current->next->next = NULL;
+}
+
+
+void initSharedVariables(){
+    //setup semaforos
+    sem_init(&mutex, 0, 1);
+    //setup variable compartida de las instancias
+    shared_instances = mmap(NULL, PAGESIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    *shared_instances = 0;
+    //setup variable compartida para saber si algún meeseeks pudo completar la tarea
+    isFinished = mmap(NULL, PAGESIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    *isFinished = 0;
+}
+
+int initPipe(){
+    returnStatus = pipe(pipefds);
+    if(returnStatus == -1){
+        printf("Unable to create pipe \n");
+        return 1;
+    }
+}
+
+int addInstance(){
+    int instances;
+    sem_wait(&mutex);
+    instances = *shared_instances + 1;
+    *shared_instances = instances;
+    sem_post(&mutex);
+    return instances;
+}
+
+int getDifficulty(){
+    sem_wait(&mutex);
+    read(pipefds[0],  &readMessage, sizeof(readMessage));
+    int difficulty = readMessage;
+    if(readMessage > 0){
+        difficulty = readMessage + 1;
+    }
+    write(pipefds[1],  &difficulty, sizeof(difficulty));
+    sem_post(&mutex);
+    return difficulty;
+}
+
+void informFinish(){
+    sem_wait(&mutex);
+    *isFinished = 1;
+    sem_post(&mutex);
+}
 
 void createMrMeeseeks(int cantidad, int nivel) {
     sem_wait(&mutex);
@@ -80,29 +141,17 @@ void createMrMeeseeks(int cantidad, int nivel) {
             break;
         }
     }
-    int instancias;
+    int instances;
     if(pId == 0) {  //Proceso hijo
         sleep(5);
         nivel = nivel + 1;
-        sem_wait(&mutex);
-        read(pipefds[0],  &readMessage, sizeof(readMessage));
-        int difficulty = readMessage;
-        if(readMessage > 0){
-            difficulty = readMessage + 1;
-        }
-        write(pipefds[1],  &difficulty, sizeof(difficulty));
-
-        instancias = *shared_instances + 1;
-        *shared_instances = instancias;
-        
-        sem_post(&mutex);
+        instances = addInstance();
+        int difficulty = getDifficulty();
         srand(time(NULL) ^ (getpid()<<16));
         int prob  = rand() % 100 + 1;
-        printf("Hi I'm Mr Meeseeks! Look at Meeeee. (pid:%d, ppid: %d, n: %d, i: %d) \n", getpid(), getppid(), nivel, instancias);
+        printf("Hi I'm Mr Meeseeks! Look at Meeeee. (pid:%d, ppid: %d, n: %d, i: %d) \n", getpid(), getppid(), nivel, instances);
         if( prob * 1.5 < difficulty){
-            sem_wait(&mutex);
-            *isFinished = 1;
-            sem_post(&mutex);
+            informFinish();
             printf("Byeeeeee\n");
         }else{
             sleep(2);
@@ -113,6 +162,7 @@ void createMrMeeseeks(int cantidad, int nivel) {
                 cantMeeseeks = 1;
             }
             if(nivel >= LEVEL_LIMIT){
+                informFinish();
                 printf("Byeeeeee\n");
                 return;
             }   
@@ -129,55 +179,55 @@ void createMrMeeseeks(int cantidad, int nivel) {
 
 
 int main(){
-    //setup semaforos
-    sem_init(&mutex, 0, 1);
-
-
     //setup pipes
-    returnStatus = pipe(pipefds);
-    if(returnStatus == -1){
-        printf("Unable to create pipe \n");
-        return 1;
-    }
+    initSharedVariables();
+    if(initPipe() == 1) return 1;
 
-    original_process = getpid();
+    int box_id = getpid();
     int difficulty;
-    char solicitud[1024];
-    printf("Que solicitud quiere pedir:");
-    *solicitud = 0;
-	gets (solicitud) ;
-    printf("Grado de dificultad de la tarea:");
-    scanf("%d", &difficulty);
-
-    write(pipefds[1],  &difficulty, sizeof(difficulty));
-
-    shared_instances = mmap(NULL, PAGESIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    *shared_instances = 1;
-
-    isFinished = mmap(NULL, PAGESIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    *isFinished = 0;
-
-    int cantMeeseeks = 0;
-    int nivel = 1;
-    tic = clock();
-    printf(" Hi I'm Mr Meeseeks! Look at Meeeee. (pid:%d, ppid: %d, n: %d, i: %d)\n", getpid(), getppid(), nivel, *shared_instances);
-    //int status = system("./box");
-
-    int result ;
-    printf("solicitud: %s\n", solicitud);
-    printf("%f\n", te_interp("5*5", &result));
-    //else
-        //evaluator_perror ( ) ;
-    //if(difficulty < 45){
-        //cantMeeseeks = 3;
-    //}else if(difficulty < 85){
-        //cantMeeseeks = 1;
-    //}
-    //createMrMeeseeks(cantMeeseeks,1);
-    //sem_destroy(&mutex);
-    
+    char request;
+    int choice;
+    do{
+        int cantMeeseeks = 0;
+        int nivel = 1;
+        printf("Welcome to the box menu\n\n");
+        printf("1.  Written request\n");
+        printf("2.  Math request\n");
+        printf("3.  Close Mr.Meeseeks box\n");
+        scanf("%d",&choice);
+        switch(choice){
+            case 1:  printf("What's the request:");
+                scanf("%s",&request);
+                printf("Degree of difficulty of the task:");
+                scanf("%d", &difficulty);
+                write(pipefds[1],  &difficulty, sizeof(difficulty));
+                printf(" Hi I'm Mr Meeseeks! Look at Meeeee. (pid:%d, ppid: %d, n: %d, i: %d)\n", getpid(), getppid(), nivel, *shared_instances);
+                if(difficulty < 45){
+                    cantMeeseeks = 3;
+                }else if(difficulty < 85){
+                    cantMeeseeks = 1;
+                }
+                break;
+            case 2:  printf("What's the request:");
+                scanf("%s",&request);
+                printf ( "%s\n", &request);
+                int result ;
+                printf("%f\n", te_interp(&request, &result));
+                break;
+            case 3:  printf("Closing Mr.Meeseeks box, bye\n");
+                break;
+            default:
+                    printf("Noooo can't do, please try to enter a valid option\n");
+                    break;
+        }
+        createMrMeeseeks(cantMeeseeks,1);
+        if(getpid() != box_id){
+            break;
+        }
+    }while(choice != 3);
+    if(getpid() == box_id){
+        sem_destroy(&mutex);
+    }
     
     return 0;
 }
-
-// gcc box.c ./eval/eval.c -lpthread -lm -o box
