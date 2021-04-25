@@ -26,9 +26,9 @@ int readMessage;    //Variable que recibe el mensaje del primer pipe(dificultad)
 char readMessage2[20];  //Recibe el mensaje del segundo pipe(Solicitud)
 
 //Variables globales compartidas
-u_int8_t *shared_instances;
-u_int8_t *taskCompleted;
-u_int8_t *isFinished;
+int *shared_instances;
+int *taskCompleted;
+int *isFinished;
 double *time_spent;
 
 //semaforos
@@ -115,7 +115,6 @@ void initSharedVariables(){         //inicia las variables compartidas, utilizan
     *taskCompleted = 0;
 
     time_spent =   mmap(NULL, PAGESIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    *time_spent = 0;
 }
 
 int initPipe(){                     //Inicializa los dos pipes que comunicaran a los Mr.Meeseeks               
@@ -295,13 +294,11 @@ void execExternalProgram(char* request){        //Ejecuta un comando que le entr
         if(chars_read > 0){
             double time_sp = (double)(toc - tic) / CLOCKS_PER_SEC;
             informFinish(1,time_sp);
-            //push(command, 1, time_spent, T);
             printf("Output was:-\n%s\n",buffer);    //Si no falla el comando, se informa del resultada al usuario
         }else{
             double time_sp = (double)(toc - tic) / CLOCKS_PER_SEC;
             informFinish(0,time_sp);
         }
-        //push(command, 1, time_spent, F);
         pclose(fp);
     }
 }
@@ -326,7 +323,7 @@ void createMrMeeseeks(int cantidad, int nivel, int type) {     //Función encarg
     }
     int instances;
     if(pId == 0) {  //Proceso hijo
-        sleep(1);
+        sleep(2);
         nivel = nivel + 1;
         instances = addInstance();
         printf("Hi I'm Mr Meeseeks! Look at Meeeee. (pid:%d, ppid: %d, n: %d, i: %d) \n", getpid(), getppid(), nivel, instances);
@@ -336,6 +333,7 @@ void createMrMeeseeks(int cantidad, int nivel, int type) {     //Función encarg
             srand(time(NULL) ^ (getpid()<<16));
             int prob  = rand() % 100 + 1;   //se hace un condición probabilistica, para determinar si el meeseeks logro hacer la tarea
             if( prob * 1.5 < difficulty){   //Si logro hacer la tarea se despide
+                toc = clock();
                 double time_sp = (double)(toc - tic) / CLOCKS_PER_SEC;
                 informFinish(1,time_sp);
                 printf("Byeeeeee\n");
@@ -348,6 +346,7 @@ void createMrMeeseeks(int cantidad, int nivel, int type) {     //Función encarg
                     cantMeeseeks = 1;
                 }
                 if(nivel >= LEVEL_LIMIT){   //si alcanza el limite de niveles, se terminan todos los meeseeks
+                    toc = clock();
                     double time_sp = (double)(toc - tic) / CLOCKS_PER_SEC;
                     informImposibleTask(time_sp);
                     printf("Byeeeeee\n");
