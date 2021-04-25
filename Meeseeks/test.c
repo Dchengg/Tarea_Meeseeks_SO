@@ -17,8 +17,6 @@
 
 int LEVEL_LIMIT = 7;
 
-int original_process;
-
 int pipefds[2];
 int returnStatus;
 int readMessage;
